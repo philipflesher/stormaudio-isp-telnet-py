@@ -1,7 +1,7 @@
 """Classes for communicating with the Storm Audio ISP series sound processors"""
 
 from __future__ import annotations
-from asyncio import Event
+from asyncio import Event, timeout
 from decimal import *
 from enum import IntFlag, auto
 
@@ -88,12 +88,16 @@ class TelnetClient():
 
         self._read_loop_finished.clear()
 
-        self._reader, self._writer = await telnetlib3.open_connection(
-            self._host,
-            connect_minwait=0.0,
-            connect_maxwait=0.0,
-            shell=self._read_loop
-        )
+        try:
+            async with timeout(5):
+                self._reader, self._writer = await telnetlib3.open_connection(
+                    self._host,
+                    connect_minwait=0.0,
+                    connect_maxwait=0.0,
+                    shell=self._read_loop
+                )
+        except (TimeoutError, OSError) as exc:
+            raise ConnectionError from exc
 
     async def async_disconnect(
         self
