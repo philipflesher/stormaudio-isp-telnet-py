@@ -1,0 +1,18 @@
+[project]
+name = "stormaudio_isp_telnet"
+version = "0.1.0"
+authors = [
+    {name = "Philip Flesher", email = "philip@fleshers.org"},
+]
+description = "Telnet client to interface with the Storm Audio ISP series sound processors"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9"
+]
+dependencies = [
+    "telnetlib3==1.0.4"
+]
