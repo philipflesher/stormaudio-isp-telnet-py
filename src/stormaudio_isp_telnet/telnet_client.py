@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from async_timeout import timeout
-from asyncio import Event, TimeoutError
+from asyncio import create_task, Event, sleep, Task, TimeoutError
 from decimal import *
 from enum import IntFlag, auto
 
@@ -48,6 +48,7 @@ class Input:
 class ReadLinesResult(IntFlag):
     NONE = 0
     COMPLETE = auto()
+    STATE_UPDATED = auto()
     INCOMPLETE = auto()
     IGNORED = auto()
 
@@ -72,7 +73,9 @@ class TelnetClient():
         self._async_on_device_state_updated = async_on_device_state_updated
         self._async_on_disconnected = async_on_disconnected
         self._async_on_raw_line_received = async_on_raw_line_received
-        self._read_loop_finished = Event()
+        self._keepalive_loop_task: Task = None
+        self._keepalive_received: bool = False
+        self._read_loop_finished: Event = Event()
 
     def get_device_state(
         self
@@ -100,11 +103,31 @@ class TelnetClient():
         except (TimeoutError, OSError) as exc:
             raise ConnectionError from exc
 
+        self._keepalive_received = False
+        self._keepalive_loop_task = create_task(self._keepalive_loop())
+
+    async def _keepalive_loop(
+        self
+    ):
+        while True:
+
+            await self._async_send_command("ssp.keepalive")
+            await sleep(5)
+
+            if not self._keepalive_received:
+                # disconnect will cancel this task
+                create_task(self.async_disconnect())
+            self._keepalive_received = False
+
     async def async_disconnect(
         self
     ) -> None:
         """Disconnects from the telnet server."""
         self._writer.close()
+        if self._keepalive_loop_task is not None:
+            self._keepalive_loop_task.cancel()
+            self._keepalive_loop_task = None
+        self._keepalive_received = False
         await self._read_loop_finished.wait()
 
     async def _read_loop(
@@ -144,6 +167,11 @@ class TelnetClient():
             while self._read_lines.has_next_line():
                 read_result: ReadLinesResult = ReadLinesResult.NONE
 
+                read_result |= self._eval__line(
+                    ['ssp', 'keepalive'],
+                    self._eval_keepalive
+                )
+
                 read_result |= self._eval__single_bracket_field(
                     ['ssp', 'brand'],
                     lambda x: self._device_state.__setattr__('brand', x),
@@ -177,7 +205,7 @@ class TelnetClient():
                     lambda x: int(x)
                 )
 
-                if read_result & ReadLinesResult.COMPLETE:
+                if read_result & ReadLinesResult.STATE_UPDATED:
                     # At least one line evaluator read data and updated state.
                     state_updated = True
 
@@ -224,7 +252,7 @@ class TelnetClient():
             line: TokenizedLineReader = self._read_lines.read_next_line()
             if line.pop_next_tokens_if_equal(expected=expected_tokens):
                 read_result: ReadLinesResult = continue_fn(line)
-                if read_result == ReadLinesResult.COMPLETE:
+                if read_result & ReadLinesResult.COMPLETE:
                     self._read_lines.consume_read_lines()
                 else:
                     self._read_lines.reset_read_lines()
@@ -232,6 +260,13 @@ class TelnetClient():
             self._read_lines.reset_read_lines()
             return ReadLinesResult.IGNORED
         return ReadLinesResult.INCOMPLETE
+
+    def _eval_keepalive(
+        self,
+        line: TokenizedLineReader
+    ) -> ReadLinesResult:
+        self._keepalive_received = True
+        return ReadLinesResult.COMPLETE
 
     def _eval__single_bracket_field(
         self,
@@ -243,7 +278,7 @@ class TelnetClient():
             bracket_fields: list(str) = line.pop_next_token()
             if type(bracket_fields) is list:
                 set_fn(convert_fn(bracket_fields[0]))
-                return ReadLinesResult.COMPLETE
+                return ReadLinesResult.COMPLETE | ReadLinesResult.STATE_UPDATED
             return ReadLinesResult.IGNORED
 
         return self._eval__line(
@@ -261,7 +296,7 @@ class TelnetClient():
             self._device_state.power_command = PowerCommand.OFF
         else:
             return ReadLinesResult.IGNORED
-        return ReadLinesResult.COMPLETE
+        return ReadLinesResult.COMPLETE | ReadLinesResult.STATE_UPDATED
 
     def _eval_processor_state(
         self,
@@ -279,7 +314,7 @@ class TelnetClient():
                 self._device_state.processor_state = ProcessorState.ON
             else:
                 return ReadLinesResult.IGNORED
-            return ReadLinesResult.COMPLETE
+            return ReadLinesResult.COMPLETE | ReadLinesResult.STATE_UPDATED
         return ReadLinesResult.IGNORED
 
     def _eval_inputs(
@@ -309,7 +344,7 @@ class TelnetClient():
             elif line.pop_next_tokens_if_equal(['ssp', 'input', 'end']):
                 # set input list
                 self._device_state.inputs = new_inputs
-                return ReadLinesResult.COMPLETE
+                return ReadLinesResult.COMPLETE | ReadLinesResult.STATE_UPDATED
             else:
                 return ReadLinesResult.IGNORED
         return ReadLinesResult.INCOMPLETE
