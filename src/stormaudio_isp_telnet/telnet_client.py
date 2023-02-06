@@ -1,6 +1,7 @@
 """Classes for communicating with the Storm Audio ISP series sound processors"""
 
 from __future__ import annotations
+from asyncio import Event
 from decimal import *
 from enum import IntFlag, auto
 
@@ -56,7 +57,10 @@ class TelnetClient():
 
     def __init__(
         self,
-        host
+        host: str,
+        async_on_device_state_updated,
+        async_on_disconnected,
+        async_on_raw_line_received=None
     ):
         self._device_state: DeviceState = DeviceState()
         self._reader = None
@@ -64,6 +68,10 @@ class TelnetClient():
         self._host: str = host
         self._remaining_output: str = None
         self._read_lines: TokenizedLinesReader = None
+        self._async_on_device_state_updated = async_on_device_state_updated
+        self._async_on_disconnected = async_on_disconnected
+        self._async_on_raw_line_received = async_on_raw_line_received
+        self._read_loop_finished = Event()
 
     def get_device_state(
         self
@@ -78,6 +86,8 @@ class TelnetClient():
         self._read_lines = TokenizedLinesReader()
         self._remaining_output = ''
 
+        self._read_loop_finished.clear()
+
         self._reader, self._writer = await telnetlib3.open_connection(
             self._host,
             connect_minwait=0.0,
@@ -85,11 +95,12 @@ class TelnetClient():
             shell=self._read_loop
         )
 
-    def disconnect(
+    async def async_disconnect(
         self
     ) -> None:
         """Disconnects from the telnet server."""
         self._writer.close()
+        await self._read_loop_finished.wait()
 
     async def _read_loop(
         self,
@@ -115,13 +126,16 @@ class TelnetClient():
             # index, which is partial output (no CR yet)
             line_count = len(output_lines)
             if (line_count > 1):
-                for line in output_lines:
-                    print(line)
+                if self._async_on_raw_line_received is not None:
+                    for line_idx in range(0, line_count - 1):
+                        await self._async_on_raw_line_received(
+                            output_lines[line_idx])
                 self._read_lines.add_lines(output_lines[0: line_count - 1])
 
             # Save the remaining partial output
             self._remaining_output = output_lines[len(output_lines) - 1]
 
+            state_updated: bool = False
             while self._read_lines.has_next_line():
                 read_result: ReadLinesResult = ReadLinesResult.NONE
 
@@ -158,6 +172,10 @@ class TelnetClient():
                     lambda x: int(x)
                 )
 
+                if read_result & ReadLinesResult.COMPLETE:
+                    # At least one line evaluator read data and updated state.
+                    state_updated = True
+
                 if read_result & ReadLinesResult.INCOMPLETE:
                     # At least one line evaluator didn't have enough lines.
                     break
@@ -166,6 +184,22 @@ class TelnetClient():
                     # All evaluators ignored the line; remove it.
                     self._read_lines.read_next_line()
                     self._read_lines.consume_read_lines()
+
+            if state_updated:
+                await self._async_notify_device_state_updated()
+
+        await self._async_notify_disconnected()
+        self._read_loop_finished.set()
+
+    async def _async_notify_disconnected(
+        self
+    ):
+        await self._async_on_disconnected()
+
+    async def _async_notify_device_state_updated(
+        self
+    ):
+        await self._async_on_device_state_updated()
 
     async def _async_send_command(
         self,
