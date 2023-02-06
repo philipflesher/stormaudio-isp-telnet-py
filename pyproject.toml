@@ -14,5 +14,6 @@ classifiers = [
     "Programming Language :: Python :: 3.9"
 ]
 dependencies = [
-    "telnetlib3==1.0.4"
+    "telnetlib3==2.0.0",
+    "async_timeout==4.0.2"
 ]
