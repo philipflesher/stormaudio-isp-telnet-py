@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from async_timeout import timeout
-from asyncio import Event
+from asyncio import Event, TimeoutError
 from decimal import *
 from enum import IntFlag, auto
 
