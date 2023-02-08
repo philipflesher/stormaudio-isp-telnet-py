@@ -314,11 +314,15 @@ class TelnetClient():
         self._writer.write(command + '\n')
         await self._writer.drain()
 
+    async def async_set_power_command(self, power_command: PowerCommand):
+        power_command_string: str = 'on' if power_command == PowerCommand.ON else 'off'
+        await self._async_send_command(f'ssp.power.{power_command_string}')
+
     async def async_request_zones(self):
         await self._async_send_command('ssp.zones.list')
 
     async def async_set_mute(self, mute: bool):
-        mute_command = 'on' if mute else 'off'
+        mute_command: str = 'on' if mute else 'off'
         await self._async_send_command(f'ssp.mute.{mute_command}')
 
     async def async_set_volume(self, volume_db: Decimal):
