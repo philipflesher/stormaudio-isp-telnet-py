@@ -317,6 +317,22 @@ class TelnetClient():
     async def async_request_zones(self):
         await self._async_send_command('ssp.zones.list')
 
+    async def async_set_mute(self, mute: bool):
+        mute_command = 'on' if mute else 'off'
+        await self._async_send_command(f'ssp.mute.{mute_command}')
+
+    async def async_set_volume(self, volume_db: Decimal):
+        await self._async_send_command(f'ssp.vol.[{volume_db}]')
+
+    async def async_set_input_id(self, input_id: int):
+        await self._async_send_command(f'ssp.input.[{input_id}]')
+
+    async def async_set_input_zone2_id(self, input_zone2_id: int):
+        await self._async_send_command(f'ssp.inputZone2.[{input_zone2_id}]')
+
+    async def async_set_preset_id(self, preset_id: int):
+        await self._async_send_command(f'ssp.preset.[{preset_id}]')
+
     def _eval__line(
         self,
         expected_tokens: list(str),
