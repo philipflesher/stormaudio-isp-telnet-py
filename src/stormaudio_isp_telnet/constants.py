@@ -84,3 +84,15 @@ class AudioZone2InputID(Enum):
     STEREO_XLR_IN = 25
     UNUSED_26 = 26
     ARC_2 = 27
+
+
+class ZoneLayoutType(Enum):
+    DOWNMIX = 2000
+    MONO = 2001
+    STEREO_AND_STEREO_AV = 2002
+    HEADPHONE = 2003
+
+
+class ZoneType(Enum):
+    MAIN_SPEAKERS = 0
+    ALTERNATE_SPEAKERS = 1
