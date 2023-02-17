@@ -164,10 +164,12 @@ class TelnetClient():
         self
     ) -> None:
         """Disconnects from the telnet server."""
-        self._writer.close()
         if self._keepalive_loop_task is not None:
             self._keepalive_loop_task.cancel()
             self._keepalive_loop_task = None
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
         self._keepalive_received = False
         await self._read_loop_finished.wait()
 
@@ -179,121 +181,134 @@ class TelnetClient():
         """Async loop to read data received from the telnet server;
         sets device state as a result of data received."""
 
+        exception: Exception = None
         while True:
-            read_output = await reader.read(1024)
-            if not read_output:
-                # EOF
-                break
-
-            # Append new read output to any prior remaining output
-            output = self._remaining_output + read_output
-
-            # Parse the complete lines from the output
-            output_lines = output.split('\n')
-
-            # Add all complete lines to the read lines; excludes final
-            # index, which is partial output (no CR yet)
-            line_count = len(output_lines)
-            if (line_count > 1):
-                if self._async_on_raw_line_received is not None:
-                    for line_idx in range(0, line_count - 1):
-                        await self._async_on_raw_line_received(
-                            output_lines[line_idx])
-                self._read_lines.add_lines(output_lines[0: line_count - 1])
-
-            # Save the remaining partial output
-            self._remaining_output = output_lines[len(output_lines) - 1]
-
-            state_updated: bool = False
-            while self._read_lines.has_next_line():
-                read_result: ReadLinesResult = ReadLinesResult.NONE
-
-                read_result |= self._eval__line(
-                    ['ssp', 'keepalive'],
-                    self._eval_keepalive
-                )
-
-                read_result |= self._eval__single_bracket_field(
-                    ['ssp', 'brand'],
-                    lambda x: self._device_state.__setattr__('brand', x),
-                    lambda x: x.strip('"')
-                )
-                read_result |= self._eval__single_bracket_field(
-                    ['ssp', 'model'],
-                    lambda x: self._device_state.__setattr__('model', x),
-                    lambda x: x.strip('"')
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'power'],
-                    self._eval_power_command
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'procstate'],
-                    self._eval_processor_state
-                )
-                read_result |= self._eval__single_bracket_field(
-                    ['ssp', 'vol'],
-                    lambda x: self._device_state.__setattr__('volume_db', x),
-                    lambda x: Decimal(x)
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'mute'],
-                    self._eval_mute
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'input', 'start'],
-                    self._eval_inputs
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'zones', 'start'],
-                    self._eval_zones
-                )
-                read_result |= self._eval__line(
-                    ['ssp', 'preset', 'start'],
-                    self._eval_presets
-                )
-
-                preset_read_result: ReadLinesResult = self._eval__single_bracket_field(
-                    ['ssp', 'preset'],
-                    lambda x: self._device_state.__setattr__('preset_id', x),
-                    lambda x: int(x)
-                )
-                read_result |= preset_read_result
-                # If the preset changes, request the zones list explicitly; the ISP
-                # does not refresh the available zones when the preset changes
-                if preset_read_result & ReadLinesResult.COMPLETE:
-                    await self.async_request_zones()
-
-                read_result |= self._eval__single_bracket_field(
-                    ['ssp', 'input'],
-                    lambda x: self._device_state.__setattr__('input_id', x),
-                    lambda x: int(x)
-                )
-                read_result |= self._eval__single_bracket_field(
-                    ['ssp', 'inputZone2'],
-                    lambda x: self._device_state.__setattr__(
-                        'input_zone2_id', x),
-                    lambda x: int(x)
-                )
-
-                if read_result & ReadLinesResult.STATE_UPDATED:
-                    # At least one line evaluator read data and updated state.
-                    state_updated = True
-
-                if read_result & ReadLinesResult.INCOMPLETE:
-                    # At least one line evaluator didn't have enough lines.
+            try:
+                read_output = await reader.read(1024)
+                if not read_output:
+                    # EOF
                     break
 
-                if read_result == ReadLinesResult.IGNORED:
-                    # All evaluators ignored the line; remove it.
-                    self._read_lines.read_next_line()
-                    self._read_lines.consume_read_lines()
+                # Append new read output to any prior remaining output
+                output = self._remaining_output + read_output
 
-            if state_updated:
-                await self._async_notify_device_state_updated()
+                # Parse the complete lines from the output
+                output_lines = output.split('\n')
 
-        await self._async_notify_disconnected()
+                # Add all complete lines to the read lines; excludes final
+                # index, which is partial output (no CR yet)
+                line_count = len(output_lines)
+                if (line_count > 1):
+                    if self._async_on_raw_line_received is not None:
+                        for line_idx in range(0, line_count - 1):
+                            await self._async_on_raw_line_received(
+                                output_lines[line_idx])
+                    self._read_lines.add_lines(output_lines[0: line_count - 1])
+
+                # Save the remaining partial output
+                self._remaining_output = output_lines[len(output_lines) - 1]
+
+                state_updated: bool = False
+                while self._read_lines.has_next_line():
+                    read_result: ReadLinesResult = ReadLinesResult.NONE
+
+                    read_result |= self._eval__line(
+                        ['ssp', 'keepalive'],
+                        self._eval_keepalive
+                    )
+
+                    read_result |= self._eval__single_bracket_field(
+                        ['ssp', 'brand'],
+                        lambda x: self._device_state.__setattr__('brand', x),
+                        lambda x: x.strip('"')
+                    )
+                    read_result |= self._eval__single_bracket_field(
+                        ['ssp', 'model'],
+                        lambda x: self._device_state.__setattr__('model', x),
+                        lambda x: x.strip('"')
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'power'],
+                        self._eval_power_command
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'procstate'],
+                        self._eval_processor_state
+                    )
+                    read_result |= self._eval__single_bracket_field(
+                        ['ssp', 'vol'],
+                        lambda x: self._device_state.__setattr__(
+                            'volume_db', x),
+                        lambda x: Decimal(x)
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'mute'],
+                        self._eval_mute
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'input', 'start'],
+                        self._eval_inputs
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'zones', 'start'],
+                        self._eval_zones
+                    )
+                    read_result |= self._eval__line(
+                        ['ssp', 'preset', 'start'],
+                        self._eval_presets
+                    )
+
+                    preset_read_result: ReadLinesResult = self._eval__single_bracket_field(
+                        ['ssp', 'preset'],
+                        lambda x: self._device_state.__setattr__(
+                            'preset_id', x),
+                        lambda x: int(x)
+                    )
+                    read_result |= preset_read_result
+                    # If the preset changes, request the zones list explicitly; the ISP
+                    # does not refresh the available zones when the preset changes
+                    if preset_read_result & ReadLinesResult.COMPLETE:
+                        await self.async_request_zones()
+
+                    read_result |= self._eval__single_bracket_field(
+                        ['ssp', 'input'],
+                        lambda x: self._device_state.__setattr__(
+                            'input_id', x),
+                        lambda x: int(x)
+                    )
+                    read_result |= self._eval__single_bracket_field(
+                        ['ssp', 'inputZone2'],
+                        lambda x: self._device_state.__setattr__(
+                            'input_zone2_id', x),
+                        lambda x: int(x)
+                    )
+
+                    if read_result & ReadLinesResult.STATE_UPDATED:
+                        # At least one line evaluator read data and updated state.
+                        state_updated = True
+
+                    if read_result & ReadLinesResult.INCOMPLETE:
+                        # At least one line evaluator didn't have enough lines.
+                        break
+
+                    if read_result == ReadLinesResult.IGNORED:
+                        # All evaluators ignored the line; remove it.
+                        self._read_lines.read_next_line()
+                        self._read_lines.consume_read_lines()
+
+                if state_updated:
+                    await self._async_notify_device_state_updated()
+            except Exception as ex:
+                create_task(self.async_disconnect())
+                exception = ex
+                break
+
         self._read_loop_finished.set()
+        self._reader = None
+        await self._async_notify_disconnected()
+
+        if exception is not None:
+            raise RuntimeError("Error in reader loop") from exception
 
     async def _async_notify_disconnected(
         self
