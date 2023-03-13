@@ -505,7 +505,9 @@ class TelnetClient():
 
     def _parse_audio_zone_ids(self, bracket_field: str):
         bracket_field_token = bracket_field.strip('"["').strip('"]"')
-        bracket_field_tokens: list[str] = bracket_field_token.split('","')
+        bracket_field_tokens: list[str] = []
+        if len(bracket_field_token) > 0:
+            bracket_field_tokens = bracket_field_token.split('","')
         return list(map(lambda x: int(x), bracket_field_tokens))
 
     def _eval_presets(

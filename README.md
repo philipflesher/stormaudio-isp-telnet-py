@@ -1,4 +1,4 @@
-Simple Python client for communicating with the telnet server interface of the Storm Audio ISP series sound processors. Current as of firmware version 4.3r0.
+Simple Python client for communicating with the telnet server interface of the Storm Audio ISP series sound processors. Current as of firmware version 4.4r1.
 
 Device user manual: https://www.stormaudio.com/wp-content/uploads/2021/12/ISP-Owners-Manual_MK2_4.2r1_rev5_A4.pdf
 
