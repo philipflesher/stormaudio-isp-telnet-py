@@ -22,7 +22,6 @@ from stormaudio_isp_telnet.constants import PowerCommand
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
-ONE_HUNDRED = Decimal(100)
 
 volume_control_decibel_range: Decimal = Decimal(60)
 log_a: Decimal = Decimal(1) / \
@@ -32,7 +31,7 @@ log_b: Decimal = (Decimal(1) / Decimal(log_a)).ln()
 
 def volume_level_to_decibels(volume_level: Decimal) -> Decimal:
     if volume_level <= ZERO:
-        return ONE_HUNDRED
+        return -volume_control_decibel_range
     elif volume_level >= ONE:
         return ZERO
     x = log_a * (log_b * volume_level).exp()
@@ -101,7 +100,7 @@ async def do_it():
     # await asyncio.sleep(2)
 
     # await client.async_set_power_command(power_command=PowerCommand.OFF)
-    await client.async_set_power_command(power_command=PowerCommand.ON)
+    # await client.async_set_power_command(power_command=PowerCommand.ON)
 
     # await client.async_set_input_id(1)
     # await client.async_set_input_id(11)
@@ -111,6 +110,7 @@ async def do_it():
 
     # await client.async_set_mute(True)
     # await client.async_set_mute(False)
+    await client.async_toggle_mute()
 
     # await client.async_set_volume(-100)
     # await client.async_set_volume(Decimal(-97.8))

@@ -339,6 +339,9 @@ class TelnetClient():
     async def async_set_mute(self, mute: bool):
         mute_command: str = 'on' if mute else 'off'
         await self._async_send_command(f'ssp.mute.{mute_command}')
+    
+    async def async_toggle_mute(self):
+        await self._async_send_command(f'ssp.mute.toggle')
 
     async def async_set_volume(self, volume_db: Decimal):
         await self._async_send_command(f'ssp.vol.[{volume_db}]')
